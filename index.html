@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Conduction thermique (approche statistique)</title>
+<style>
+:root{--bg:#faf8f4;--fg:#1f1d1a;--mut:#6b665e;--card:#fff;--bd:#d9d4ca;--coin:#e3a72f;--coin2:#8a5e08;--acc:#2a5db0;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17161a;--fg:#ecebe6;--mut:#a09b92;--card:#222127;--bd:#3a3841;--coin:#f0b73e;--coin2:#7a5208;--acc:#7fa8ee;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#17161a;--fg:#ecebe6;--mut:#a09b92;--card:#222127;--bd:#3a3841;--coin:#f0b73e;--coin2:#7a5208;--acc:#7fa8ee;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1400px;margin:0 auto;padding:16px}
+h1{font-size:1.3rem;margin:0 0 12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:12px}
+.layout{display:grid;grid-template-columns:310px minmax(0,1fr);gap:12px;align-items:start}
+.ctl{display:flex;flex-direction:column;gap:16px;margin-bottom:0}
+.sim .card:last-child{margin-bottom:0}
+@media (max-width:820px){.layout{grid-template-columns:1fr}.ctl{margin-bottom:12px}}
+label{display:block;font-size:.9rem}
+input[type=range]{width:100%;display:block}
+input[type=number]{width:7.5em;font:inherit;padding:2px 6px;margin-left:6px;background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:6px}
+.grp{display:flex;flex-direction:column;gap:10px}
+.grp h2{font-size:.78rem;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);margin:0;padding-bottom:4px;border-bottom:1px solid var(--bd)}
+.lb{display:block;font-size:.9rem;margin-bottom:4px}
+.btns{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+button{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer}
+button.s{background:transparent;color:var(--fg);border:1px solid var(--bd)}
+button.s.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+canvas{width:100%;display:block}
+.ro{display:flex;gap:16px;flex-wrap:wrap;font-size:.9rem;color:var(--mut);margin-top:6px}
+.ro b{color:var(--fg)}
+</style>
+</head>
+<body>
+<main>
+<h1>Conduction thermique (approche statistique)</h1>
+<div class="layout">
+<aside class="card ctl">
+<section class="grp"><h2>Système</h2>
+<label>Nombre de personnes <input id="nn" type="number" min="3" max="1000" value="30"><input id="n" type="range" min="0" max="1000" value="396"></label>
+<label>Pièces par personne qui en a <input id="mm" type="number" min="1" max="1000" value="20"><input id="m" type="range" min="0" max="1000" value="434"></label>
+<div><span class="lb">Répartition initiale</span><div class="btns" id="ic"><button class="s on" data-c="L">Gauche</button><button class="s" data-c="R">Droite</button><button class="s" data-c="M">Centre</button></div></div>
+</section>
+<section class="grp"><h2>Règles du jeu : probabilités</h2>
+<label>Passer à gauche (%) <input id="pln" type="number" min="0" max="100" step="0.1"><input id="pls" type="range" min="0" max="100" step="0.1"></label>
+<label>Rester sur place (%) <input id="psn" type="number" min="0" max="100" step="0.1"><input id="pss" type="range" min="0" max="100" step="0.1"></label>
+<label>Passer à droite (%) <input id="prn" type="number" min="0" max="100" step="0.1"><input id="prs" type="range" min="0" max="100" step="0.1"></label>
+<div class="btns"><button id="pe" class="s">Équiprobable</button></div>
+</section>
+<section class="grp"><h2>Simulation</h2>
+<label>Vitesse (pas par seconde) : <b id="sv">10</b><input id="s" type="range" min="0" max="1000" value="250"></label>
+<div class="btns"><button id="go">Lecture</button><button id="st" class="s">1 pas</button><button id="rs" class="s">Réinitialiser</button></div>
+</section>
+</aside>
+<div class="sim">
+<div class="card"><canvas id="cv"></canvas>
+<div class="ro"><span>Pas : <b id="rt">0</b></span><span>Pièces : <b id="rp">0</b></span><span>Vitesse réelle : <b id="rv">0</b> pas/s</span><span>Entropie de Boltzmann : S = k<sub>B</sub> ln Ω, avec Ω = N! / (n₁! n₂! … nₙ!) (N : nombre de pièces, nᵢ : pièces chez la personne i)</span></div></div>
+<div class="card"><canvas id="ce"></canvas>
+</div>
+</div>
+</div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt=v=>v.toLocaleString("fr-FR");
+const dimH=()=>window.innerWidth<820?Math.min(520,Math.max(320,window.innerWidth*0.6)):Math.round(Math.max(240,Math.min(560,window.innerHeight-370)));
+let n,m,cur,nxt,total,t,hist,ymax,maxInit,Smax,cond="L",playing=false,last=0,acc=0,g2=null,hs=1,cnt=0,tr=0;
+const LF=new Float64Array(171);for(let k=2;k<171;k++)LF[k]=LF[k-1]+Math.log(k);
+const lg=k=>k<171?LF[k]:k*Math.log(k)-k+.5*Math.log(6.283185307179586*k)+1/(12*k);
+const nice=v=>{if(v<100)return Math.max(1,Math.round(v));const p=Math.pow(10,Math.floor(Math.log10(v))-1);return Math.round(v/p)*p};
+const L3=Math.log10(3);
+const valN=()=>nice(Math.pow(10,L3+(3-L3)*$("n").value/1000));
+const valM=()=>nice(Math.pow(10,3*$("m").value/1000));
+const valS=()=>Math.max(1,Math.round(Math.pow(10,4*$("s").value/1000)));
+const readN=()=>Math.min(1000,Math.max(3,Math.round(+$("nn").value||30)));
+const readM=()=>Math.min(1000,Math.max(1,Math.round(+$("mm").value||20)));
+
+const NP=1<<18,POOL=new Float64Array(NP);
+(()=>{let s=0,s2=0;for(let i=0;i<NP;i+=2){const u=Math.random()||1e-12,r=Math.sqrt(-2*Math.log(u)),a=6.283185307179586*Math.random();POOL[i]=r*Math.cos(a);POOL[i+1]=r*Math.sin(a)}
+  for(let i=0;i<NP;i++){s+=POOL[i];s2+=POOL[i]*POOL[i]}const mu=s/NP,sd=Math.sqrt(s2/NP-mu*mu);for(let i=0;i<NP;i++)POOL[i]=(POOL[i]-mu)/sd})();
+let rs=(Math.random()*4294967296)>>>0||1;
+function xr(){rs^=rs<<13;rs^=rs>>>17;rs^=rs<<5;return rs>>>0}
+const mk=p=>{const T=[];for(let c=0;c<40;c++){const a=new Float64Array(c);if(p>=1)a.fill(0);else{let s=0,pk=Math.pow(1-p,c);const rt=p/(1-p);for(let k=0;k<c;k++){s+=pk;a[k]=s;pk*=(c-k)/(k+1)*rt}}T.push(a)}return T};
+let TLt,TRt,PLv=1/3,Qv=.5,SL=0,SR=.5,NTL=40,NTR=40;
+function bs(c,T,k0){const a=T[c],u=xr()*2.3283064365386963e-10;let k=k0;if(k<c&&u>a[k]){k++;while(k<c&&u>a[k])k++}else{while(k>0&&u<=a[k-1])k--}return k}
+function bg(c,p){const lq=Math.log(1-p);let k=0,pos=0;for(;;){pos+=Math.floor(Math.log(1-Math.random())/lq)+1;if(pos>c)return k;k++}}
+function smp(c,p,T,sd){
+  if(c<40)return bs(c,T,Math.min(c,(c*p)|0));
+  const pp=p<.5?p:1-p;
+  if(c*pp<9){if(p<=0)return 0;if(p>=1)return c;return p<.5?bg(c,p):c-bg(c,1-p)}
+  const x=Math.floor(c*p+sd*Math.sqrt(c)*POOL[xr()>>>14]+.5);return x<0?0:x>c?c:x}
+const P=[1/3,1/3,1/3],ID=["l","s","r"];
+function applyP(){const pl=P[0],den=1-pl,q=den>1e-12?Math.min(1,Math.max(0,P[2]/den)):0;PLv=pl;Qv=q;SL=Math.sqrt(pl*(1-pl));SR=Math.sqrt(q*(1-q));TLt=mk(pl);TRt=mk(q);const a1=Math.min(pl,1-pl),a2=Math.min(q,1-q);NTL=a1>0?Math.max(40,Math.ceil(9/a1)):Infinity;NTR=a2>0?Math.max(40,Math.ceil(9/a2)):Infinity}
+function showP(){ID.forEach((k,i)=>{const v=Math.round(P[i]*1000)/10;$("p"+k+"s").value=v;$("p"+k+"n").value=v})}
+function setP(i,v){v=Math.min(1,Math.max(0,v));const o=[0,1,2].filter(j=>j!==i),a=P[o[0]],b=P[o[1]];
+  if(a+b>1e-12){P[o[0]]=a/(a+b)*(1-v);P[o[1]]=b/(a+b)*(1-v)}else{P[o[0]]=P[o[1]]=(1-v)/2}
+  P[i]=v;showP();applyP()}
+applyP();
+function fit(c,h){const r=window.devicePixelRatio||1,w=c.clientWidth,pw=Math.round(w*r),ph=Math.round(h*r);if(c.width!==pw||c.height!==ph){c.width=pw;c.height=ph;c.style.height=h+"px"}const x=c.getContext("2d");x.setTransform(r,0,0,r,0,0);x.textAlign="left";x.lineWidth=1;return[x,w,h]}
+function entropy(){const N=n,A=cur;let S=lg(total);for(let i=0;i<N;i++)S-=lg(A[i]);return S}
+function profile(w){const nb=Math.min(n,Math.max(1,Math.floor((w-20)/3))),b=new Float64Array(nb);
+  for(let k=0;k<nb;k++){const i0=Math.floor(k*n/nb),i1=Math.floor((k+1)*n/nb);let s=0;for(let i=i0;i<i1;i++)s+=cur[i];b[k]=s/(i1-i0)}return b}
+
+function reset(){
+  n=readN();m=readM();
+  cur=new Float64Array(n);nxt=new Float64Array(n);
+  const half=Math.floor(n/2);
+  if(cond==="L")for(let i=0;i<half;i++)cur[i]=m;
+  else if(cond==="R")for(let i=n-half;i<n;i++)cur[i]=m;
+  else cur[half]=half*m;
+  total=half*m;t=0;
+  const q=Math.floor(total/n),r=total-q*n;Smax=lg(total)-r*lg(q+1)-(n-r)*lg(q);
+  maxInit=cond==="M"?half*m:m;
+  const mb=Math.max(...profile(Math.max($("cv").clientWidth,100)-30));ymax=mb+4*Math.sqrt(mb)+2;
+  hs=1;hist=[{t:0,s:entropy()}];draw();
+}
+function step(){
+  const N=n,A=cur,B=nxt,pl=PLv,qv=Qv,sl=SL,sr=SR,tL=TLt,tR=TRt,nl=NTL,nr=NTR;B.fill(0);
+  for(let i=0;i<N;i++){const c=A[i];if(c===0)continue;let l,r;
+    if(c>=nl){l=Math.floor(c*pl+sl*Math.sqrt(c)*POOL[xr()>>>14]+.5);l=l<0?0:l>c?c:l}else l=smp(c,pl,tL,sl);
+    const d=c-l;
+    if(d>=nr){r=Math.floor(d*qv+sr*Math.sqrt(d)*POOL[xr()>>>14]+.5);r=r<0?0:r>d?d:r}else r=smp(d,qv,tR,sr);
+    B[i>0?i-1:0]+=l;B[i]+=c-l-r;B[i<N-1?i+1:i]+=r}
+  cur=B;nxt=A;t++;if(t%hs===0){hist.push({t,s:entropy()});if(hist.length>2000){hist=hist.filter((p,i)=>i%2===0);hs*=2}}
+}
+function draw(){
+  const[x,w,h]=fit($("cv"),dimH());
+  const base=h-26,X0=40,W=w-X0-10,H=base-10;
+  const top=maxInit+4*Math.sqrt(maxInit)+2,k=Math.min(22,W/(n*2.4),H/top),coins=k>=1.2,sy=coins?k:H/ymax;
+  x.clearRect(0,0,w,h);
+  x.strokeStyle=css("--bd");x.beginPath();x.moveTo(X0,base+.5);x.lineTo(w-10,base+.5);x.stroke();
+  x.fillStyle=css("--coin");x.strokeStyle=css("--coin2");
+  if(coins){
+    const pitch=2.4*k,cw=2.2*k,xs=X0+(W-n*pitch)/2,hh=k>=4?k:Math.max(k-.6,.4);x.lineWidth=k>=4?1:0;
+    x.beginPath();
+    for(let i=0;i<n;i++){const cx=xs+i*pitch+(pitch-cw)/2,c=Math.min(cur[i],top);
+      for(let j=0;j<c;j++)x.rect(cx,base-(j+1)*k+k-hh,cw,hh)}
+    x.fill();if(k>=4)x.stroke();
+  }else{
+    const b=profile(w-30),bw=W/b.length;
+    for(let i=0;i<b.length;i++){const hh=Math.min(b[i]/ymax,1)*H;x.fillRect(X0+i*bw,base-hh,Math.max(bw-(bw>3?1:0),1),hh)}
+  }
+  x.fillStyle=css("--mut");x.strokeStyle=css("--mut");x.lineWidth=1;x.font="12px system-ui,sans-serif";
+  const yTop=H/sy,raw=yTop/4,p=Math.pow(10,Math.floor(Math.log10(raw))),st=[1,2,5,10].map(f=>f*p).find(s=>s>=raw);
+  x.textAlign="right";
+  for(let v=0;v<=yTop;v+=st){const y=base-v*sy;x.fillText(fmt(v),X0-6,y+4);x.beginPath();x.moveTo(X0-3,y+.5);x.lineTo(X0,y+.5);x.stroke()}
+  x.textAlign="center";x.fillText("personne n° (1 à "+fmt(n)+")",X0+W/2,h-6);
+  x.textAlign="left";x.fillText("pièces par personne",4,12);
+  $("rt").textContent=t;$("rp").textContent=fmt(total);
+  drawE();
+}
+function drawE(){
+  const [x,w,h]=fit($("ce"),180);
+  const M=Smax;
+  const S0=hist[0]?.s??0;
+  const T=Math.max(200,t);
+  const L=42,B=30,top=10;
+  const range=M-S0;
+  const scale=range>1e-9?range:1;
+
+  x.clearRect(0,0,w,h);
+  x.font="12px system-ui,sans-serif";
+  x.fillStyle=css("--mut");
+  x.strokeStyle=css("--bd");
+
+  const X=i=>L+(w-L-10)*i/T;
+  const Y=s=>h-B-(h-B-top)*((s-S0)/scale);
+
+  x.beginPath();
+  x.moveTo(L,top);
+  x.lineTo(L,h-B);
+  x.lineTo(w-10,h-B);
+  x.stroke();
+
+  x.fillText("S",L-14,16);
+  x.fillText("itération",w/2-25,h-6);
+
+  x.strokeStyle=css("--acc");
+  x.lineWidth=2;
+  x.beginPath();
+
+  hist.forEach((p,i)=>{
+    const px=X(p.t);
+    const py=Math.max(top,Math.min(h-B,Y(p.s)));
+    i?x.lineTo(px,py):x.moveTo(px,py);
+  });
+
+  x.stroke();
+  x.lineWidth=1;
+}
+function loop(ts){
+  if(playing){acc+=(ts-last)/1000*valS();last=ts;const t0=performance.now();let did=false;
+    while(acc>=1&&performance.now()-t0<13){step();acc--;cnt++;did=true}
+    if(acc>=1)acc=0;if(did)draw();
+    if(ts-tr>500){$("rv").textContent=fmt(Math.round(cnt*1000/(ts-tr)));cnt=0;tr=ts}}
+  else{cnt=0;tr=ts;$("rv").textContent="0"}
+  requestAnimationFrame(loop);
+}
+$("go").onclick=()=>{playing=!playing;last=performance.now();$("go").textContent=playing?"Pause":"Lecture"};
+$("rs").onclick=reset;
+$("st").onclick=()=>{playing=false;$("go").textContent="Lecture";step();draw()};
+$("n").oninput=()=>{$("nn").value=valN();reset()};
+$("m").oninput=()=>{$("mm").value=valM();reset()};
+$("nn").onchange=()=>{const v=readN();$("nn").value=v;$("n").value=Math.round((Math.log10(v)-L3)/(3-L3)*1000);reset()};
+$("mm").onchange=()=>{const v=readM();$("mm").value=v;$("m").value=Math.round(Math.log10(v)/3*1000);reset()};
+$("s").oninput=()=>{$("sv").textContent=valS()};
+document.querySelectorAll("#ic button").forEach(b=>b.onclick=()=>{cond=b.dataset.c;document.querySelectorAll("#ic button").forEach(x=>x.classList.toggle("on",x===b));reset()});
+window.addEventListener("resize",draw);
+ID.forEach((k,i)=>{$("p"+k+"s").oninput=()=>setP(i,+$("p"+k+"s").value/100);$("p"+k+"n").onchange=()=>setP(i,(+$("p"+k+"n").value||0)/100)});
+$("pe").onclick=()=>{P[0]=P[1]=P[2]=1/3;showP();applyP()};
+showP();
+reset();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
