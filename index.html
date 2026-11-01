@@ -13,10 +13,14 @@ body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 system-ui,-app
 main{max-width:1400px;margin:0 auto;padding:16px}
 h1{font-size:1.3rem;margin:0 0 12px}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:12px}
-.layout{display:grid;grid-template-columns:310px minmax(0,1fr);gap:12px;align-items:start}
-.ctl{display:flex;flex-direction:column;gap:16px;margin-bottom:0}
-.sim .card:last-child{margin-bottom:0}
-@media (max-width:820px){.layout{grid-template-columns:1fr}.ctl{margin-bottom:12px}}
+.ctl{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px 24px;align-items:start}
+.bot{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(0,1fr);gap:12px}
+.ct{margin:0 0 6px;font-size:.95rem;font-weight:600}
+.bot .card{margin-bottom:0}
+@media (max-width:820px){.bot{grid-template-columns:1fr}.bot .card{margin-bottom:12px}}
+.dt>summary{cursor:pointer;font-size:.9rem;padding:2px 0}
+.dt[open]>summary{margin-bottom:10px}
+.dt .in{display:flex;flex-direction:column;gap:10px}
 label{display:block;font-size:.9rem}
 input[type=range]{width:100%;display:block}
 input[type=number]{width:7.5em;font:inherit;padding:2px 6px;margin-left:6px;background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:6px}
@@ -35,29 +39,29 @@ canvas{width:100%;display:block}
 <body>
 <main>
 <h1>Conduction thermique (approche statistique)</h1>
-<div class="layout">
-<aside class="card ctl">
+<div class="card ctl">
 <section class="grp"><h2>Système</h2>
 <label>Nombre de personnes <input id="nn" type="number" min="3" max="1000" value="30"><input id="n" type="range" min="0" max="1000" value="396"></label>
-<label>Pièces par personne qui en a <input id="mm" type="number" min="1" max="1000" value="20"><input id="m" type="range" min="0" max="1000" value="434"></label>
-<div><span class="lb">Répartition initiale</span><div class="btns" id="ic"><button class="s on" data-c="L">Gauche</button><button class="s" data-c="R">Droite</button><button class="s" data-c="M">Centre</button></div></div>
+<label>Pièces par personne <input id="mm" type="number" min="1" max="1000" value="20"><input id="m" type="range" min="0" max="1000" value="434"></label>
 </section>
-<section class="grp"><h2>Règles du jeu : probabilités</h2>
+<section class="grp"><h2>Répartition des pièces</h2>
+<div class="btns" id="ic"><button class="s on" data-c="L">Gauche</button><button class="s" data-c="R">Droite</button><button class="s" data-c="M">Centre</button></div>
+<details class="dt"><summary>Règles du jeu : probabilités</summary><div class="in">
 <label>Passer à gauche (%) <input id="pln" type="number" min="0" max="100" step="0.1"><input id="pls" type="range" min="0" max="100" step="0.1"></label>
 <label>Rester sur place (%) <input id="psn" type="number" min="0" max="100" step="0.1"><input id="pss" type="range" min="0" max="100" step="0.1"></label>
 <label>Passer à droite (%) <input id="prn" type="number" min="0" max="100" step="0.1"><input id="prs" type="range" min="0" max="100" step="0.1"></label>
 <div class="btns"><button id="pe" class="s">Équiprobable</button></div>
+</div></details>
 </section>
 <section class="grp"><h2>Simulation</h2>
 <label>Vitesse (pas par seconde) : <b id="sv">10</b><input id="s" type="range" min="0" max="1000" value="250"></label>
 <div class="btns"><button id="go">Lecture</button><button id="st" class="s">1 pas</button><button id="rs" class="s">Réinitialiser</button></div>
 </section>
-</aside>
-<div class="sim">
-<div class="card"><canvas id="cv"></canvas>
-<div class="ro"><span>Pas : <b id="rt">0</b></span><span>Pièces : <b id="rp">0</b></span><span>Vitesse réelle : <b id="rv">0</b> pas/s</span><span>Entropie de Boltzmann : S = k<sub>B</sub> ln Ω, avec Ω = N! / (n₁! n₂! … nₙ!) (N : nombre de pièces, nᵢ : pièces chez la personne i)</span></div></div>
-<div class="card"><canvas id="ce"></canvas>
 </div>
+<div class="bot">
+<div class="card"><canvas id="cv"></canvas>
+<div class="ro" id="ro"><span>Pas : <b id="rt">0</b></span><span>Pièces : <b id="rp">0</b></span><span>Vitesse réelle : <b id="rv">0</b> pas/s</span></div></div>
+<div class="card"><h3 class="ct" id="ct">Entropie</h3><canvas id="ce"></canvas><div class="ro" id="ed"><span>Entropie de Boltzmann : S = k<sub>B</sub> ln Ω, avec Ω = N! / (n₁! n₂! … nₙ!) (N : nombre de pièces, nᵢ : pièces chez la personne i)</span></div>
 </div>
 </div>
 </main>
@@ -65,7 +69,8 @@ canvas{width:100%;display:block}
 const $=id=>document.getElementById(id);
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const fmt=v=>v.toLocaleString("fr-FR");
-const dimH=()=>window.innerWidth<820?Math.min(520,Math.max(320,window.innerWidth*0.6)):Math.round(Math.max(240,Math.min(560,window.innerHeight-370)));
+const dimE=()=>window.innerWidth<820?180:Math.max(120,dimH()+($("ro").offsetHeight||0)-($("ct").offsetHeight||0)-($("ed").offsetHeight||0)-6);
+const dimH=()=>window.innerWidth<820?Math.min(520,Math.max(320,window.innerWidth*0.6)):Math.round(Math.max(260,Math.min(700,window.innerHeight-350)));
 let n,m,cur,nxt,total,t,hist,ymax,maxInit,Smax,cond="L",playing=false,last=0,acc=0,g2=null,hs=1,cnt=0,tr=0;
 const LF=new Float64Array(171);for(let k=2;k<171;k++)LF[k]=LF[k-1]+Math.log(k);
 const lg=k=>k<171?LF[k]:k*Math.log(k)-k+.5*Math.log(6.283185307179586*k)+1/(12*k);
@@ -98,7 +103,7 @@ function setP(i,v){v=Math.min(1,Math.max(0,v));const o=[0,1,2].filter(j=>j!==i),
   if(a+b>1e-12){P[o[0]]=a/(a+b)*(1-v);P[o[1]]=b/(a+b)*(1-v)}else{P[o[0]]=P[o[1]]=(1-v)/2}
   P[i]=v;showP();applyP()}
 applyP();
-function fit(c,h){const r=window.devicePixelRatio||1,w=c.clientWidth,pw=Math.round(w*r),ph=Math.round(h*r);if(c.width!==pw||c.height!==ph){c.width=pw;c.height=ph;c.style.height=h+"px"}const x=c.getContext("2d");x.setTransform(r,0,0,r,0,0);x.textAlign="left";x.lineWidth=1;return[x,w,h]}
+function fit(c,h){if(c.id==="ce")h=dimE();const r=window.devicePixelRatio||1,w=c.clientWidth,pw=Math.round(w*r),ph=Math.round(h*r);if(c.width!==pw||c.height!==ph){c.width=pw;c.height=ph;c.style.height=h+"px"}const x=c.getContext("2d");x.setTransform(r,0,0,r,0,0);x.textAlign="left";x.lineWidth=1;return[x,w,h]}
 function entropy(){const N=n,A=cur;let S=lg(total);for(let i=0;i<N;i++)S-=lg(A[i]);return S}
 function profile(w){const nb=Math.min(n,Math.max(1,Math.floor((w-20)/3))),b=new Float64Array(nb);
   for(let k=0;k<nb;k++){const i0=Math.floor(k*n/nb),i1=Math.floor((k+1)*n/nb);let s=0;for(let i=i0;i<i1;i++)s+=cur[i];b[k]=s/(i1-i0)}return b}
